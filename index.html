@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobile Chord Trainer</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --primary: #22c55e;
+            --secondary: #eab308;
+            --danger: #ef4444;
+            --text: #f8fafc;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text);
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            touch-action: manipulation; /* Prevents zooming on fast taps */
+        }
+
+        .container {
+            width: 90%;
+            max-width: 400px;
+            background: var(--card-bg);
+            padding: 2rem 1.5rem;
+            border-radius: 24px;
+            text-align: center;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        #round-info {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #94a3b8;
+            margin-bottom: 1rem;
+        }
+
+        #chord-display {
+            font-size: clamp(3.5rem, 15vw, 5rem); /* Scales for mobile screens */
+            font-weight: 800;
+            color: var(--primary);
+            min-height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+        }
+
+        #note-display {
+            font-size: 1.25rem;
+            color: var(--secondary);
+            height: 1.5rem;
+            margin: 1rem 0;
+            font-weight: 600;
+            letter-spacing: 2px;
+        }
+
+        .control-panel {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 2rem;
+            background: rgba(0,0,0,0.2);
+            padding: 15px;
+            border-radius: 15px;
+        }
+
+        .interval-label { font-size: 0.7rem; color: #64748b; grid-column: 1 / span 3; }
+
+        button {
+            border: none;
+            border-radius: 12px;
+            padding: 15px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.1s, opacity 0.2s;
+            color: white;
+        }
+
+        button:active { transform: scale(0.95); }
+
+        .btn-math { background: #334155; font-size: 1.5rem; }
+        
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        #start-stop { flex: 2; background: #16a34a; }
+        #start-stop.running { background: var(--danger); }
+        
+        #reset-btn { flex: 1; background: #475569; }
+
+        .interval-val { font-size: 1.5rem; font-weight: 700; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Chord Trainer App</h1>
+        <div id="round-info">Round: 1 | Chord: 0/24</div>
+        <div id="chord-display">READY</div>
+        <div id="note-display"></div>
+
+        <div class="control-panel">
+            <div class="interval-label">INTERVAL (SECONDS)</div>
+            <button class="btn-math" onclick="changeInterval(-1)">−</button>
+            <div class="interval-val" id="time-label">10</div>
+            <button class="btn-math" onclick="changeInterval(1)">+</button>
+        </div>
+
+        <div class="action-buttons">
+            <button id="start-stop" onclick="toggleTrainer()">START</button>
+            <button id="reset-btn" onclick="resetSession()">RESET</button>
+        </div>
+    </div>
+
+    <script>
+        const chordData = {
+            "C Major": "C - E - G", "C# Major": "C# - F - G#", "D Major": "D - F# - A", 
+            "D# Major": "D# - G - A#", "E Major": "E - G# - B", "F Major": "F - A - C", 
+            "F# Major": "F# - A# - C#", "G Major": "G - B - D", "G# Major": "G# - C - D#", 
+            "A Major": "A - C# - E", "A# Major": "A# - D - F", "B Major": "B - D# - F#",
+            "C Minor": "C - D# - G", "C# Minor": "C# - E - G#", "D Minor": "D - F - A", 
+            "D# Minor": "D# - F# - A#", "E Minor": "E - G - B", "F Minor": "F - G# - C", 
+            "F# Minor": "F# - A - C#", "G Minor": "G - A# - D", "G# Minor": "G# - B - D#", 
+            "A Minor": "A - C - E", "A# Minor": "A# - C# - F", "B Minor": "B - D - F#"
+        };
+
+        let chordList = Object.keys(chordData);
+        let deck = [];
+        let intervalTime = 10;
+        let mainTimer = null;
+        let noteTimer = null;
+        let isRunning = false;
+        let chordsPlayed = 0;
+        let roundCount = 1;
+
+        const display = document.getElementById('chord-display');
+        const noteDisplay = document.getElementById('note-display');
+        const timeLabel = document.getElementById('time-label');
+        const startBtn = document.getElementById('start-stop');
+        const roundInfo = document.getElementById('round-info');
+
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        function changeInterval(val) {
+            intervalTime = Math.max(3, intervalTime + val);
+            timeLabel.innerText = intervalTime;
+            if (isRunning) {
+                stopTrainer();
+                startTrainer();
+            }
+        }
+
+        function toggleTrainer() {
+            isRunning ? stopTrainer() : startTrainer();
+        }
+
+        function resetSession() {
+            stopTrainer();
+            deck = [];
+            chordsPlayed = 0;
+            roundCount = 1;
+            display.innerText = "READY";
+            noteDisplay.innerText = "";
+            roundInfo.innerText = "Round: 1 | Chord: 0/24";
+        }
+
+        function startTrainer() {
+            isRunning = true;
+            startBtn.innerText = "STOP";
+            startBtn.classList.add('running');
+            if (deck.length === 0) deck = shuffle([...chordList]);
+            runCycle();
+        }
+
+        function stopTrainer() {
+            isRunning = false;
+            startBtn.innerText = "START";
+            startBtn.classList.remove('running');
+            clearTimeout(mainTimer);
+            clearTimeout(noteTimer);
+        }
+
+        function runCycle() {
+            if (!isRunning) return;
+
+            if (deck.length === 0) {
+                alert(`Round ${roundCount} Complete! Starting next round...`);
+                roundCount++;
+                chordsPlayed = 0;
+                deck = shuffle([...chordList]);
+            }
+
+            const currentChord = deck.pop();
+            chordsPlayed++;
+            
+            display.innerText = currentChord;
+            noteDisplay.innerText = ""; 
+            roundInfo.innerText = `Round: ${roundCount} | Chord: ${chordsPlayed}/24`;
+
+            // Note reveal happens 2 seconds before the interval ends
+            noteTimer = setTimeout(() => {
+                noteDisplay.innerText = chordData[currentChord];
+            }, (intervalTime - 2) * 1000);
+
+            mainTimer = setTimeout(runCycle, intervalTime * 1000);
+        }
+    </script>
+</body>
+</html>
